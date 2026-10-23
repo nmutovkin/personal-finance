@@ -100,6 +100,42 @@ The banks are Russian, which changes the picture:
 | T-Bank brokerage | T-Invest API | Broker report import |
 | Cash | Telegram bot / PWA quick-add | — |
 
+### 3.2 Minimizing manual input (main goal)
+
+Target: the family only ever types something for cash, and even that is optional.
+
+**Ingestion** (pick the highest level that is acceptable):
+
+| Level | Setup | Manual work per month |
+|-------|-------|-----------------------|
+| 1 | ZenMoney API sync for all supported banks | ~0 (re-link a bank when its session expires) |
+| 2 | No ZenMoney, Android phones: push/SMS forwarding + statements e-mailed on a schedule, parsed from a mailbox | ~5–15 min (banks without scheduled e-mail statements) |
+| 3 | No ZenMoney, iPhones: SMS forwarding where available + monthly statement upload | ~20–40 min |
+
+Levels can be combined (e.g. ZenMoney + notifications for instant updates).
+
+**Processing — no manual work after data arrives:**
+
+- **Dedup:** notification, statement and API copies of the same payment are
+  merged (match on account, amount, time ±1 day, merchant); the statement or
+  API record wins.
+- **Transfers between own accounts** are matched automatically, so they never
+  count as income or expense.
+- **Categorization:** 1) user rules (merchant → category), 2) MCC code from
+  the statement, 3) an LLM for unknown merchants; anything categorized once is
+  remembered as a rule. Manual review only for low-confidence items, shown
+  as a weekly "check these 3 transactions" message in the bot.
+- **Deposits:** balance is computed from rate and terms; interest notifications
+  and statements confirm it.
+
+**Cash with minimal input:**
+
+- An ATM withdrawal is automatically a transfer card → owner's cash wallet.
+- Logging individual cash purchases is optional.
+- Once a week the bot asks "how much cash do you have?". The difference from the
+  expected balance is booked as "cash spending (uncategorized)". One number a
+  week keeps cash totals correct.
+
 ## 4. Solution options
 
 ### Option A — Use an existing open-source tool (self-hosted)
