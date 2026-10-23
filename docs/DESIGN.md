@@ -136,6 +136,34 @@ Levels can be combined (e.g. ZenMoney + notifications for instant updates).
   expected balance is booked as "cash spending (uncategorized)". One number a
   week keeps cash totals correct.
 
+### 3.3 Our setup: Sber, T-Bank, Alfa · Android · no ZenMoney
+
+**Building blocks**
+
+- **Notification forwarder** on every family phone: an Android
+  `NotificationListenerService` (small custom app, or MacroDroid/Tasker at first)
+  sends bank push/SMS text to our webhook. Each phone sees only its owner's
+  cards, so every member needs it. Battery-optimization whitelisting is
+  required (especially on Xiaomi/Huawei/Samsung).
+- **Notification parsers** per bank (Sber, T-Bank, Alfa): amount, currency,
+  merchant, card/account, balance if present. Kept as regex templates with tests
+  on real samples.
+- **Statement importers** per bank: T-Bank (CSV/XLSX export), Sber (PDF),
+  Alfa (PDF/XLSX). Statements requested in the bank app with "send to e-mail" go
+  to a dedicated mailbox; the service picks them up via IMAP automatically.
+- **Telegram bot** for cash and weekly review.
+
+**Variants**
+
+| Variant | Sources | Manual work | Risk |
+|---------|---------|-------------|------|
+| V1 (recommended) | Notifications + monthly statements via e-mail | ~5 min/month (3 statement requests) + weekly cash number | Low: read-only data |
+| V2 | Notifications only | ~0 + cash | Low, less accurate: misses whatever banks don't notify (some fees, interest) and anything missed while a phone is off |
+| V3 | V1 + automated login to bank web/mobile APIs | ~0 + cash | High: stored credentials give full access to money; 2FA; anti-fraud blocks; private APIs break |
+
+V3 can be added later as an optional, isolated module if the family accepts
+the risks (see §8).
+
 ## 4. Solution options
 
 ### Option A — Use an existing open-source tool (self-hosted)
