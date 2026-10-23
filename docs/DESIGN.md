@@ -53,6 +53,53 @@ the banks are in**. Options, from most to least automatic:
 account pick one. Typically: aggregator API for banks that support it, statement
 import for the rest, manual entry for cash, balance snapshots for deposits.
 
+### 3.1 Russian banks (our case)
+
+The banks are Russian, which changes the picture:
+
+- **No PSD2-style aggregator.** International aggregators (Plaid, Tink, TrueLayer,
+  Salt Edge, Enable Banking, …) do not serve Russian banks.
+- **Bank of Russia Open API is coming, but not usable for us yet.** The CBR has
+  published standards for access to account information with user consent
+  (orders ОД-2887 / ОД-2895 of 19.12.2025), and the open-API law planned to make
+  it mandatory for the largest banks starting 2026. Access is meant for
+  registered financial institutions, not hobby apps, so we should not count on
+  it near-term. Keep the importer interface ready to add it later.
+- **ZenMoney (Дзен-мани) as a sync layer.** ZenMoney already syncs with most
+  large Russian banks (Sber, T-Bank, Alfa, VTB, …; check coverage for each of
+  your banks) and has an API (`POST https://api.zenmoney.ru/v8/diff/`, OAuth
+  token, incremental sync) with community clients in Python/Node. Paid
+  subscription. Its bank connectors are the open-source `ZenPlugins` project.
+  **This is the most practical way to get automatic sync for Russian banks.**
+- **Statement import works with every bank.** Banks export statements, usually
+  as PDF; some also offer CSV/XLSX/OFX (T-Bank, for example, exports operations
+  from its web version). Expect to write one parser per bank. PDF parsing is
+  more fragile but doable (`pdfplumber` / `camelot`).
+- **Push/SMS notifications** give near-real-time data without third parties:
+  - Android: an app such as MacroDroid/Tasker (or a small custom app) forwards
+    bank push notifications or SMS to our webhook;
+  - iPhone: iOS can't read other apps' push notifications, but a Shortcuts
+    automation can forward incoming SMS to a webhook (only if the bank still
+    sends SMS; many now charge for SMS or have moved to push only).
+  - Treat notifications as provisional; reconcile with statements monthly.
+- **Investments:** T-Bank's brokerage has an official token-based API
+  (T-Invest API). Other brokers: import their broker reports.
+- **FX rates:** the Bank of Russia publishes official daily rates for free
+  (`https://www.cbr.ru/scripts/XML_daily.asp`). Base currency: RUB.
+- **Hosting:** a Russian VPS (paid with a Russian card) or a home server behind a
+  VPN. Telegram bots work but Telegram has had disruptions in Russia, so keep a
+  PWA quick-add as a fallback for cash entry.
+
+**Ingestion plan per account type:**
+
+| Account | Primary source | Fallback |
+|---------|----------------|----------|
+| Cards / current accounts at large banks | ZenMoney sync → our DB via API | Statement import + notifications |
+| Small banks without ZenMoney support | Statement import (CSV/XLSX/PDF) | Notifications, manual balance |
+| Deposits / savings | Manual balance snapshot (monthly) | Statement import |
+| T-Bank brokerage | T-Invest API | Broker report import |
+| Cash | Telegram bot / PWA quick-add | — |
+
 ## 4. Solution options
 
 ### Option A — Use an existing open-source tool (self-hosted)
@@ -87,6 +134,23 @@ reports, API) and write only the parts that are missing for your situation:
 **Effort:** working system in ~1 week, custom pieces added incrementally.
 If Firefly III later feels limiting, the importers and bot are reusable for a
 fully custom back-end (Option B).
+
+### Recommendation for Russian banks
+
+There is no open-banking aggregator for Russian banks, so pick based on how
+much you want to depend on ZenMoney:
+
+1. **Just ZenMoney.** It already covers bank sync, cash entry, categories and
+   reports. Zero development. Good enough if its reports and family sharing suit you.
+2. **ZenMoney as the data source + our own service (recommended).** A worker
+   pulls everything via the ZenMoney `diff` API every ~15 min into our
+   PostgreSQL DB. We build what ZenMoney lacks: a family dashboard and net-worth
+   history, our own statistics, a Telegram bot, T-Invest API sync, custom rules.
+   If ZenMoney ever goes away, our data is already stored locally and statement
+   importers take over.
+3. **Fully independent.** No third parties: statement importers + notification
+   forwarding + manual entry (Option B or C). Most private, least automatic:
+   about 15–30 minutes a month uploading statements.
 
 ## 5. Architecture (for Option B, or the custom parts of Option C)
 
@@ -213,14 +277,23 @@ your banks' country:
 - Banks without open-banking access: fully workable with statement import
   (a few minutes per month) plus notification parsing — less automatic, but
   reliable.
+- **Russian banks (our case):** automatic sync is realistic through ZenMoney's
+  API. Without it, statement import plus notification forwarding works for
+  every bank. The CBR Open API may become an option later.
+  Revised MVP estimate for option 2 in §4: **~4–6 weeks part-time**
+  (ZenMoney sync worker 1 week, dashboard/stats 1–2 weeks, Telegram bot 1 week,
+  1–2 statement importers 1 week).
 
 ## 10. Open questions
 
-1. Which country/countries are the banks in, and which banks exactly?
-2. Which currencies are involved, and which should be the base currency?
-3. How many family members will enter data, and do they need separate private
+1. ~~Which country?~~ Russia. Which banks exactly? (Needed to check ZenMoney
+   coverage and statement formats.)
+2. Which currencies besides RUB (USD/EUR/CNY accounts, cash in foreign currency)?
+3. Is a paid ZenMoney subscription acceptable as the sync layer?
+4. Phones: Android or iPhone? (Decides how notification forwarding works.)
+5. How many family members will enter data, and do they need separate private
    accounts or is everything shared?
-4. Are there investments, deposits, loans/mortgage to track, or just cash flow?
-5. Preference: adopt an existing tool quickly, or build a custom app (also as a
+6. Are there investments, deposits, loans/mortgage to track, or just cash flow?
+7. Preference: adopt an existing tool quickly, or build a custom app (also as a
    learning/hobby project)?
-6. Where to host: home server, VPS, or a managed cloud?
+8. Where to host: home server or a Russian VPS?
